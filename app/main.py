@@ -5,6 +5,8 @@ import os
 EMAIL = os.environ.get("MY_APP_EMAIL")
 PASSWORD = os.environ.get("MY_APP_PASSWORD")
 
+
+
 if not EMAIL or not PASSWORD:
     raise ValueError("Les variables MY_APP_EMAIL et MY_APP_PASSWORD doivent être définies.")
 
@@ -66,18 +68,20 @@ def lire_attente_en_secondes(page):
         return 0
 
 # Camoufox agit comme le contexte de navigateur Playwright
-with Camoufox(headless=True, os=["windows", "macos"], humanize=True) as navigateur:
+with Camoufox(headless=False, os=["windows", "macos"], humanize=True) as navigateur:
+    print("Starting...")
     page = navigateur.new_page()
 
     # --- Connexion ---
     page.goto(URL_LOGIN)
     gerer_captcha(page)
+    print("Connexion...")
     page.locator("#email").fill(EMAIL)
     page.locator("#password").fill(PASSWORD)
 
     page.get_by_role("button", name="Connexion").click()
 
-    
+    print("Connecté !")
     # --- Boucle principale ---
     while True:
         # Le bouton du booster spécifique aux paquets
