@@ -5,8 +5,6 @@ import os
 EMAIL = os.environ.get("MY_APP_EMAIL")
 PASSWORD = os.environ.get("MY_APP_PASSWORD")
 
-
-
 if not EMAIL or not PASSWORD:
     raise ValueError("Les variables MY_APP_EMAIL et MY_APP_PASSWORD doivent être définies.")
 
@@ -18,35 +16,45 @@ URL_LOGIN = "https://www.wiki-masters.com/login"
 NB_CLICS_CARTES = 4
 MARGE_SECONDES = 2  # petite marge ajoutée à l'attente
 
-
 def gerer_captcha(page):
-    """Détecte et coche la case Captcha / Turnstile, même si elle se trouve dans un iframe."""
-    iframe = page.frame_locator('iframe[src*="cloudflare"], iframe[src*="turnstile"]')
-    case_iframe = iframe.get_by_role("checkbox", name="Vérifiez que vous êtes humain")
-    case_page = page.get_by_role("checkbox", name="Vérifiez que vous êtes humain")
+    """Calcule la position de la case à cocher proportionnellement au div turnstile et clique dessus."""
+    # Sélecteur ciblant le div parent du Turnstile (qui commence par turnstile-)
+    selecteur_div = 'div[id^="turnstile-"]'
 
     try:
-        page.wait_for_selector('iframe[src*="cloudflare"], input[type="checkbox"]', timeout=3000)
-    except PlaywrightTimeout:
-        return
+        # 1. Attendre que le div conteneur soit visible
+        div_element = page.wait_for_selector(selecteur_div, timeout=50000)
 
-    try:
-        if case_iframe.is_visible(timeout=1000):
-            case_iframe.click()
-            print("Captcha coché (iframe)")
-            page.wait_for_timeout(2000)
-            return
-    except Exception:
-        pass
+        if div_element and div_element.is_visible():
+            box = div_element.bounding_box()
 
+            if box:
+                # 2. Calcul des coordonnées proportionnelles
+                # La case est située à ~9% sur la largeur (ex: ~27px pour 300px)
+                # et à 50% sur la hauteur
+                clic_x = box["x"] + (box["width"] * 0.09)
+                clic_y = box["y"] + (box["height"] * 0.50)
+
+                # 3. Effectuer le clic physique via la souris
+                page.mouse.click(clic_x, clic_y)
+                print(f"Clic Turnstile effectué aux coordonnées ({clic_x:.1f}, {clic_y:.1f})")
+                page.wait_for_timeout(2000)
+                return True
+
+    except Exception as e:
+        print(f"Pas de captcha ou erreur lors du ciblage du div : {e}")
+
+    return False
+
+def handle_bot_detection(page):
     try:
-        if case_page.is_visible(timeout=1000):
-            page.locator("label", has=case_page).click()
-            print("Captcha coché (page)")
-            page.wait_for_timeout(2000)
-            return
-    except Exception:
-        pass
+        checkbox = page.wait_for_locator("xpath=//div[contains(., 'Vérification rapide')]//input[@type='checkbox']", timeout=5000)
+        checkbox.check()
+        bouton_continuer = page.wait_for_locator(
+            "xpath=//div[contains(., 'Vérification rapide')]//button[contains(., 'Continuer')]", timeout=5000)
+        bouton_continuer.click()
+    except Exception as e:
+        print(e)
 
 
 def lire_attente_en_secondes(page):
@@ -86,15 +94,21 @@ with Camoufox(headless=False, os=["windows", "macos"], humanize=True) as navigat
     while True:
         # Le bouton du booster spécifique aux paquets
         bouton_booster = page.get_by_role("button", name="Ouvrir un paquet")
-        bouton_booster.wait_for(state="visible", timeout=30000)
-    
+        try:
+            bouton_booster.wait_for(state="visible", timeout=30000)
+            print("Booster disponible...")
+        except PlaywrightTimeout:
+            print("Contournement du captcha..")
+            handle_bot_detection(page)
+            bouton_booster.wait_for(state="visible", timeout=1000)
+            print("Contourné !")
         # Flèche "suivant"
         bouton_suivant = page.locator("button:has(polyline[points='9 18 15 12 9 6'])")
         bouton_continuer = page.get_by_role("button", name="Continuer")
         
         # Si le bouton est cliquable (actif)
         if bouton_booster.is_enabled():
-            print("Booster disponible ! Ouverture...")
+            print("Ouverture d'un booster !")
             gerer_captcha(page)
             bouton_booster.click()
             gerer_captcha(page)
